@@ -13,7 +13,7 @@ A high-performance archive explorer and packer for Battlezone (1998) `.zfs` file
 
 
 ## Installation & Usage
-1. Download the latest `zfs_specialist.exe` from the [Releases](https://github.com/YOUR_USERNAME/YOUR_REPO/releases) tab.
+1. Download the latest `zfs_specialist.exe` from the Releases tab.
 3. **To Extract:** Open a ZFS, select files (multi-select supported), and click Extract.
 4. **To Pack:** Go to the Packer tab, select a folder of files, set your XOR key, and build.
 
