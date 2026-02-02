@@ -1,6 +1,6 @@
 #include <windows.h>
-#include <lzo/lzo1x.h>
-#include <lzo/lzo1y.h>
+#include <lzo1x.h>
+#include <lzo1y.h>
 
 // Workspace memory needed for LZO1X-1 compression
 #define HEAP_ALLOC(var,size) \
@@ -31,11 +31,14 @@ extern "C" {
         unsigned char* dst,
         lzo_uint* dst_len
     ) {
+        if (!src || !dst || !dst_len) return -1; // Safety check
+        if (src_len == 0) return -1;
+
         if (type == 2) { // ZFSFLAG_1X_COMPRESSED
-            return lzo1x_decompress(src, src_len, dst, dst_len, NULL);
+            return lzo1x_decompress_safe(src, src_len, dst, dst_len, NULL);
         }
         else if (type == 4) { // ZFSFLAG_1Y_COMPRESSED
-            return lzo1y_decompress(src, src_len, dst, dst_len, NULL);
+            return lzo1y_decompress_safe(src, src_len, dst, dst_len, NULL);
         }
         return -100;
     }

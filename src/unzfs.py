@@ -4,6 +4,7 @@ import struct
 import os
 import sys
 from ctypes import *
+import zlib
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -18,7 +19,19 @@ def resource_path(relative_path):
 try:
     dll_path = resource_path('lzo_bridge.dll')
     lzo_dll = WinDLL(dll_path)
-    lzo_dll.lzo_init_dll()
+    
+    # Define signatures to match bridge.cpp (lzo_uint -> c_size_t)
+    lzo_dll.lzo_init_dll.restype = c_int
+    
+    lzo_dll.compress_buffer.argtypes = [c_void_p, c_size_t, c_void_p, POINTER(c_size_t)]
+    lzo_dll.compress_buffer.restype = c_int
+    
+    lzo_dll.decompress_buffer.argtypes = [c_int, c_char_p, c_size_t, c_char_p, POINTER(c_size_t)]
+    lzo_dll.decompress_buffer.restype = c_int
+    
+    if lzo_dll.lzo_init_dll() != 0:
+        print("LZO Init failed")
+        lzo_dll = None
 except Exception as e:
     lzo_dll = None
     print(f"Critical: DLL not found. {e}")
@@ -73,6 +86,13 @@ class ZFSManager:
         
         self.enc_var = tk.BooleanVar(value=True)
         tk.Checkbutton(top, text="Apply Header Decryption Key", variable=self.enc_var).pack(side="left", padx=10)
+        
+        self.dir_enc_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(top, text="Decrypt Directory", variable=self.dir_enc_var).pack(side="left", padx=5)
+        
+        tk.Label(top, text="Manual Key Override:").pack(side="left", padx=(10, 2))
+        self.manual_key_var = tk.StringVar(value="")
+        tk.Entry(top, textvariable=self.manual_key_var, width=12).pack(side="left")
 
         # Search Bar
         search_frame = tk.Frame(self.tab_browse)
@@ -149,13 +169,28 @@ class ZFSManager:
         self.pk_status.pack()
 
     # --- CORE LOGIC: CRYPTO ---
+    def get_manual_key(self):
+        val = self.manual_key_var.get().strip()
+        if not val: return None
+        try:
+            return int(val)
+        except ValueError:
+            # Assume string password, calculate CRC32
+            return zlib.crc32(val.encode('utf-8')) & 0xFFFFFFFF
+
     def xor_data(self, data, key):
         if key == 0: return data
-        data_map = bytearray(data)
-        key_bytes = struct.pack('<I', int(key))
-        for i in range(len(data_map)):
-            data_map[i] ^= key_bytes[i % 4]
-        return bytes(data_map)
+        
+        # Ensure key is 32-bit unsigned
+        key = int(key) & 0xFFFFFFFF
+        key_bytes = struct.pack('<I', key)
+        
+        # Fast XOR (Game Logic: Only XOR aligned 4-byte blocks)
+        aligned_len = len(data) & ~3
+        full_key = key_bytes * (aligned_len // 4)
+        xor_part = bytes(a ^ b for a, b in zip(data[:aligned_len], full_key))
+        
+        return xor_part + data[aligned_len:]
 
     # --- CORE LOGIC: EXPLORER ---
     def open_zfs(self):
@@ -167,17 +202,79 @@ class ZFSManager:
         with open(path, 'rb') as f:
             h = struct.unpack('<4sIIIIII', f.read(28))
             self.header_info = {'name_len': h[2], 'entries': h[3], 'total': h[4], 'key': h[5]}
+            print(f"[Open] Header Info: {self.header_info}")
+            
+            # Determine Key for Directory (if needed)
+            dir_key = self.header_info['key']
+            man_key = self.get_manual_key()
+            if man_key is not None: dir_key = man_key
             
             next_tab = h[6]
-            while next_tab != 0 and len(self.all_records) < h[4]:
+            limit = h[4]
+            
+            # Fix for malformed headers where total is 0 but content exists
+            if limit == 0 and next_tab != 0:
+                print("[Open] Warning: Header reports 0 files but has data pointer. Ignoring limit.")
+                limit = 999999999
+
+            f.seek(0, os.SEEK_END)
+            f_size = f.tell()
+
+            # Check if initial next_tab (h[6]) is encrypted
+            if next_tab >= f_size and dir_key != 0:
+                try:
+                    dec_next = struct.unpack('<I', self.xor_data(struct.pack('<I', next_tab), dir_key))[0]
+                    if dec_next < f_size:
+                        print(f"[Open] Detected encrypted directory pointer. Decrypted {next_tab} -> {dec_next}")
+                        next_tab = dec_next
+                except Exception as e:
+                    print(f"[Open] Failed to decrypt initial pointer: {e}")
+
+            while next_tab != 0 and len(self.all_records) < limit:
+                if next_tab < 0 or next_tab >= f_size:
+                    print(f"[Open] Invalid next_tab pointer: {next_tab}. Stopping.")
+                    break
                 f.seek(next_tab)
-                next_tab = struct.unpack('<i', f.read(4))[0]
+                
+                # Read Block Header
+                b_head = f.read(4)
+                if len(b_head) < 4: break
+                
+                # Check if block header is encrypted
+                raw_next = struct.unpack('<I', b_head)[0]
+                block_encrypted = False
+                
+                if self.dir_enc_var.get() or (raw_next >= f_size and dir_key != 0):
+                    dec_head = self.xor_data(b_head, dir_key)
+                    dec_next = struct.unpack('<I', dec_head)[0]
+                    if dec_next == 0 or dec_next < f_size:
+                        b_head = dec_head
+                        next_tab = dec_next
+                        block_encrypted = True
+                    else:
+                        next_tab = raw_next
+                else:
+                    next_tab = raw_next
+                
                 for _ in range(h[3]):
-                    if len(self.all_records) >= h[4]: break
-                    fmt = f'<{h[2]}siiiii'
-                    name_raw, offset, rnum, c_size, time, flags = struct.unpack(fmt, f.read(struct.calcsize(fmt)))
+                    if len(self.all_records) >= limit: break
+                    fmt = f'<{h[2]}sIIIII'
+                    rec_size = struct.calcsize(fmt)
+                    chunk = f.read(rec_size)
+                    if len(chunk) < rec_size: break
+                    
+                    if block_encrypted:
+                        chunk = self.xor_data(chunk, dir_key)
+
+                    name_raw, offset, rnum, c_size, time, flags = struct.unpack(fmt, chunk)
                     name = name_raw.split(b'\x00')[0].decode('ascii', errors='ignore').strip()
                     
+                    if not name: 
+                        # Debug logging for empty records if total was 0 (suspect issue)
+                        if limit == 999999999 and len(self.all_records) < 5:
+                            print(f"[Open] Skipped empty record. Raw: {chunk.hex().upper()}")
+                        continue
+
                     self.all_records.append({
                         'name': name, 'ext': os.path.splitext(name)[1].lower(),
                         'size': flags >> 8, 'packed': c_size,
@@ -213,15 +310,33 @@ class ZFSManager:
                 f.seek(rec['offset'])
                 data = f.read(rec['packed'])
                 
-                if self.enc_var.get():
-                    data = self.xor_data(data, self.header_info['key'])
+                # Determine Key
+                use_key = self.header_info['key']
+                man_key = self.get_manual_key()
+                if man_key is not None: use_key = man_key
+                
+                print(f"[Extract] File: {name} | Offset: {rec['offset']} | Packed: {rec['packed']} | Unpacked: {rec['size']} | Key: {use_key}")
+
+                if self.enc_var.get() or use_key != self.header_info['key']:
+                    data = self.xor_data(data, use_key)
 
                 if rec['method'] != "Raw" and lzo_dll:
-                    algo = 2 if (rec['flags'] & 0x0002) else 4
-                    dst = create_string_buffer(rec['size'])
-                    d_len = c_ulonglong(rec['size'])
-                    lzo_dll.decompress_buffer(algo, data, c_ulonglong(rec['packed']), dst, byref(d_len))
-                    content = dst.raw[:d_len.value]
+                    # Sanity check: If size is absurd (e.g. > 256MB), it's likely a bad decryption
+                    if rec['size'] > 268435456: 
+                        print(f"Skipping {name}: Uncompressed size {rec['size']} is suspicious.")
+                        content = b""
+                    else:
+                        algo = 2 if (rec['flags'] & 0x0002) else 4
+                        # Allocate with padding to prevent boundary read/write issues
+                        dst = create_string_buffer(rec['size'] + 4096)
+                        d_len = c_size_t(rec['size'])
+                        
+                        ret = lzo_dll.decompress_buffer(algo, data, c_size_t(len(data)), dst, byref(d_len))
+                        if ret == 0: # LZO_E_OK
+                            content = dst.raw[:d_len.value]
+                        else:
+                            print(f"Decompression failed for {name}: Error {ret}")
+                            content = b""
                 else:
                     content = data
 
@@ -249,8 +364,8 @@ class ZFSManager:
                 u_size = len(raw_data)
                 max_c = u_size + (u_size // 16) + 64 + 3
                 dst = create_string_buffer(max_c)
-                d_len = c_ulonglong(max_c)
-                lzo_dll.compress_buffer(raw_data, c_ulonglong(u_size), dst, byref(d_len))
+                d_len = c_size_t(max_c)
+                lzo_dll.compress_buffer(raw_data, c_size_t(u_size), dst, byref(d_len))
                 
                 final_data = self.xor_data(dst.raw[:d_len.value], key)
                 offset = f.tell()
