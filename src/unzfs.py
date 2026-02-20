@@ -175,22 +175,32 @@ class ZFSManager:
         try:
             return int(val)
         except ValueError:
-            # Assume string password, calculate CRC32
-            return zlib.crc32(val.encode('utf-8')) & 0xFFFFFFFF
+            # Assume string password
+            return val
 
-    def xor_data(self, data, key):
-        if key == 0: return data
+    def build_key_stream(self, key_val):
+        if not key_val:
+            return b""
+        if isinstance(key_val, int):
+            return struct.pack('<I', key_val & 0xFFFFFFFF)
         
-        # Ensure key is 32-bit unsigned
-        key = int(key) & 0xFFFFFFFF
-        key_bytes = struct.pack('<I', key)
+        # It's a string password
+        pwd_bytes = key_val.encode('utf-8')
+        header_key = zlib.crc32(pwd_bytes) & 0xFFFFFFFF
+        h_bytes = struct.pack('<I', header_key)
         
-        # Fast XOR (Game Logic: Only XOR aligned 4-byte blocks)
-        aligned_len = len(data) & ~3
-        full_key = key_bytes * (aligned_len // 4)
-        xor_part = bytes(a ^ b for a, b in zip(data[:aligned_len], full_key))
+        # The repeating key structure: [len(password)] + header_key_bytes + password_bytes
+        return bytes([len(pwd_bytes)]) + h_bytes + pwd_bytes
+
+    def xor_data(self, data, key_val):
+        key_stream = self.build_key_stream(key_val)
+        if not key_stream: return data
         
-        return xor_part + data[aligned_len:]
+        res = bytearray(len(data))
+        k_len = len(key_stream)
+        for i in range(len(data)):
+            res[i] = data[i] ^ key_stream[i % k_len]
+        return bytes(res)
 
     # --- CORE LOGIC: EXPLORER ---
     def open_zfs(self):
@@ -267,19 +277,37 @@ class ZFSManager:
                         chunk = self.xor_data(chunk, dir_key)
 
                     name_raw, offset, rnum, c_size, time, flags = struct.unpack(fmt, chunk)
+                    if block_encrypted:
+                        chunk = self.xor_data(chunk, dir_key)
+                        name_raw, offset, rnum, c_size, time, flags = struct.unpack(fmt, chunk)
+
                     name = name_raw.split(b'\x00')[0].decode('ascii', errors='ignore').strip()
                     
                     if not name: 
-                        # Debug logging for empty records if total was 0 (suspect issue)
-                        if limit == 999999999 and len(self.all_records) < 5:
-                            print(f"[Open] Skipped empty record. Raw: {chunk.hex().upper()}")
                         continue
+
+                    # Handle "Retarded" Encryption: Fix Sizes
+                    u_size = flags >> 8
+                    p_size = c_size
+                    is_encrypted = self.header_info['key'] != 0
+                    
+                    if is_encrypted:
+                        curr_pos = f.tell()
+                        f.seek(offset)
+                        prefix = f.read(1)
+                        if prefix:
+                            # prefix[0] is used both as XOR byte and to adjust sizes
+                            p_byte = prefix[0]
+                            p_size ^= p_byte
+                            u_size ^= p_byte
+                        f.seek(curr_pos)
 
                     self.all_records.append({
                         'name': name, 'ext': os.path.splitext(name)[1].lower(),
-                        'size': flags >> 8, 'packed': c_size,
+                        'size': u_size, 'packed': p_size,
                         'method': "LZO1X" if (flags & 0x2) else "LZO1Y" if (flags & 0x4) else "Raw",
-                        'offset': offset, 'flags': flags
+                        'offset': offset, 'flags': flags,
+                        'encrypted': is_encrypted
                     })
         self.refresh_tree()
 
@@ -302,47 +330,82 @@ class ZFSManager:
         out_dir = filedialog.askdirectory()
         if not out_dir: return
 
+        count = 0
         with open(self.current_zfs_path, 'rb') as f:
             for item in items:
                 name = self.tree.item(item)['values'][0]
                 rec = next(r for r in self.all_records if r['name'] == name)
                 
                 f.seek(rec['offset'])
-                data = f.read(rec['packed'])
                 
                 # Determine Key
                 use_key = self.header_info['key']
                 man_key = self.get_manual_key()
                 if man_key is not None: use_key = man_key
+
+                is_encrypted = rec.get('encrypted', False)
                 
-                print(f"[Extract] File: {name} | Offset: {rec['offset']} | Packed: {rec['packed']} | Unpacked: {rec['size']} | Key: {use_key}")
+                if is_encrypted:
+                    # Skip the "Retarded" 2-byte prefix
+                    f.read(2)
+                    data = f.read(rec['packed'])
+                else:
+                    data = f.read(rec['packed'])
+                
+                print(f"[Extract] File: {name} | Offset: {rec['offset']} | Packed: {rec['packed']} | Unpacked: {rec['size']} | Key: {use_key} | Enc: {is_encrypted}")
 
-                if self.enc_var.get() or use_key != self.header_info['key']:
-                    data = self.xor_data(data, use_key)
+                if man_key is not None: key = man_key
+                else: key = use_key
 
-                if rec['method'] != "Raw" and lzo_dll:
-                    # Sanity check: If size is absurd (e.g. > 256MB), it's likely a bad decryption
-                    if rec['size'] > 268435456: 
-                        print(f"Skipping {name}: Uncompressed size {rec['size']} is suspicious.")
-                        content = b""
-                    else:
-                        algo = 2 if (rec['flags'] & 0x0002) else 4
-                        # Allocate with padding to prevent boundary read/write issues
-                        dst = create_string_buffer(rec['size'] + 4096)
-                        d_len = c_size_t(rec['size'])
-                        
+                # Get record details
+                offset = rec['offset']
+                p_size = rec['packed']
+                u_size = rec['size']
+                flags = rec['flags']
+                
+                f.seek(offset)
+                
+                # Decrypt: BZ98 Redux repeating XOR key mechanism
+                # Initial 2 bytes are NOT part of data but ARE XORed
+                if key != 0 and key != "":
+                    encrypted_data = f.read(p_size + 2)
+                    decrypted_block = self.xor_data(encrypted_data, key)
+                    data = decrypted_block[2:] # Skip the 2-byte prefix
+                else:
+                    data = f.read(p_size)
+                
+                # Decompress
+                if (flags & 0x6) and lzo_dll:
+                    # ZFS uses LZO1X or LZO1Y.
+                    # LZO_ALGO_1X = 2, LZO_ALGO_1Y = 4
+                    algo = 2 if (flags & 0x0002) else 4
+                    
+                    # u_size in ZFS usually reflects the final size.
+                    # Provide a reasonable buffer size for decompression,
+                    # as u_size might be incorrect in some malformed ZFS files.
+                    dst_size = max(u_size, 10 * 1024 * 1024) 
+                    dst = create_string_buffer(dst_size + 4096) # Add padding
+                    d_len = c_size_t(u_size) # Expected decompressed length
+
+                    try:
                         ret = lzo_dll.decompress_buffer(algo, data, c_size_t(len(data)), dst, byref(d_len))
                         if ret == 0: # LZO_E_OK
                             content = dst.raw[:d_len.value]
                         else:
-                            print(f"Decompression failed for {name}: Error {ret}")
-                            content = b""
+                            print(f"Decompression error {ret} for {name}")
+                            content = data # Fallback to packed if decompression fails
+                    except Exception as e:
+                        print(f"Decompression crash for {name}: {e}")
+                        content = data # Fallback to packed if decompression crashes
                 else:
                     content = data
 
-                with open(os.path.join(out_dir, name), 'wb') as out_f:
+                out_path = os.path.join(out_dir, name)
+                with open(out_path, 'wb') as out_f:
                     out_f.write(content)
-        messagebox.showinfo("Done", f"Extracted {len(items)} files.")
+                
+                count += 1
+        messagebox.showinfo("Done", f"Extracted {count} files.")
 
     def pack_folder(self):
         in_dir = filedialog.askdirectory(title="Source Folder")
