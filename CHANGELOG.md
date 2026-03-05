@@ -2,6 +2,14 @@
 
 ## 2026-03-05
 
+- Added BZ-themed UI styling aligned with Battlezone98Redux_GOGModDownloader:
+  - dark panel backgrounds
+  - cyan/blue accent and highlight colors
+  - styled notebook tabs, buttons, entries, treeview, headings, and progress bar
+- Updated explorer/packer labels and status bar presentation to match the BZ HUD-like look.
+
+## 2026-03-05
+
 - Fixed encrypted archive extraction so MakeZFS-style content now exports correctly.
 - Removed incorrect packed/unpacked size mutation based on encrypted data prefixes.
 - Corrected decrypt/decompress order for encrypted compressed files:

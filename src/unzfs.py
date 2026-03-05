@@ -41,6 +41,22 @@ class ZFSManager:
         self.root = root
         self.root.title("Battlezone ZFS Specialist v3.0")
         self.root.geometry("1000x700")
+        self.colors = {
+            "bg": "#0a0a0a",
+            "fg": "#d4d4d4",
+            "highlight": "#00aaff",
+            "dark_highlight": "#002244",
+            "accent": "#88ccff",
+            "panel": "#1a1a1a",
+            "status_bg": "#050505",
+        }
+        self.current_font = "Consolas"
+        self.root.option_add("*Font", (self.current_font, 10))
+        self.root.configure(bg=self.colors["bg"])
+
+        self.style = ttk.Style()
+        self.style.theme_use("default")
+        self.update_styles(self.style)
         
         # Set Window Icon (The taskbar/titlebar icon)
         try:
@@ -64,25 +80,144 @@ class ZFSManager:
 
         self.setup_explorer_ui()
         self.setup_packer_ui()
+        self.apply_manual_widget_theme()
+
+    def update_styles(self, style):
+        c = self.colors
+        main_font = (self.current_font, 10)
+        bold_font = (self.current_font, 11, "bold")
+
+        style.configure(".", background=c["bg"], foreground=c["fg"], font=main_font)
+        style.configure("TFrame", background=c["bg"])
+        style.configure("TNotebook", background=c["bg"], borderwidth=0)
+        style.configure("TNotebook.Tab", background=c["panel"], foreground=c["fg"], padding=[10, 3])
+        style.map(
+            "TNotebook.Tab",
+            background=[("selected", c["dark_highlight"])],
+            foreground=[("selected", c["highlight"])],
+        )
+        style.configure("TLabel", background=c["bg"], foreground=c["fg"])
+        style.configure(
+            "TEntry",
+            fieldbackground=c["panel"],
+            foreground=c["accent"],
+            insertcolor=c["highlight"],
+        )
+        style.configure("TCheckbutton", background=c["bg"], foreground=c["fg"])
+        style.map(
+            "TCheckbutton",
+            background=[("active", c["bg"])],
+            foreground=[("active", c["highlight"])],
+        )
+        style.configure("TButton", background=c["panel"], foreground=c["fg"], font=main_font)
+        style.map(
+            "TButton",
+            background=[("active", c["dark_highlight"])],
+            foreground=[("active", c["highlight"])],
+        )
+        style.configure("Accent.TButton", foreground=c["highlight"], font=bold_font)
+        style.configure(
+            "BZ.Horizontal.TProgressbar",
+            thickness=14,
+            background=c["highlight"],
+            troughcolor=c["status_bg"],
+            bordercolor=c["dark_highlight"],
+            lightcolor=c["highlight"],
+            darkcolor=c["highlight"],
+        )
+        style.configure(
+            "Treeview",
+            background=c["status_bg"],
+            foreground=c["fg"],
+            fieldbackground=c["status_bg"],
+            rowheight=28,
+        )
+        style.map("Treeview", background=[("selected", c["accent"])], foreground=[("selected", "#000000")])
+        style.configure(
+            "Treeview.Heading",
+            background=c["panel"],
+            foreground=c["highlight"],
+            font=bold_font,
+            relief="flat",
+        )
+        style.map("Treeview.Heading", background=[("active", c["dark_highlight"])])
+
+    def apply_manual_widget_theme(self):
+        c = self.colors
+
+        def apply_widget_style(widget):
+            if isinstance(widget, tk.Frame):
+                widget.configure(bg=c["bg"])
+            elif isinstance(widget, tk.Label):
+                widget.configure(bg=c["bg"], fg=c["fg"])
+            elif isinstance(widget, tk.Entry):
+                widget.configure(
+                    bg=c["panel"],
+                    fg=c["accent"],
+                    insertbackground=c["highlight"],
+                    relief="sunken",
+                    bd=1,
+                )
+            elif isinstance(widget, tk.Button):
+                widget.configure(
+                    bg=c["panel"],
+                    fg=c["fg"],
+                    activebackground=c["dark_highlight"],
+                    activeforeground=c["highlight"],
+                    highlightbackground=c["dark_highlight"],
+                    bd=1,
+                    relief="raised",
+                )
+            elif isinstance(widget, tk.Checkbutton):
+                widget.configure(
+                    bg=c["bg"],
+                    fg=c["fg"],
+                    activebackground=c["bg"],
+                    activeforeground=c["highlight"],
+                    selectcolor=c["panel"],
+                    highlightthickness=0,
+                )
+
+            for child in widget.winfo_children():
+                apply_widget_style(child)
+
+        apply_widget_style(self.root)
+
+        self.ex_status.configure(
+            bg=c["status_bg"],
+            fg=c["accent"],
+            relief="sunken",
+            bd=1,
+            highlightbackground=c["dark_highlight"],
+        )
+        self.pk_status.configure(bg=c["status_bg"], fg=c["accent"])
+        self.root.configure(bg=c["bg"])
+
+        if hasattr(self, "menubar"):
+            try:
+                self.menubar.configure(bg=c["panel"], fg=c["fg"], activebackground=c["dark_highlight"], activeforeground=c["highlight"])
+                self.help_menu.configure(bg=c["panel"], fg=c["fg"], activebackground=c["dark_highlight"], activeforeground=c["highlight"])
+            except Exception:
+                pass
 
     # --- UI: EXPLORER TAB ---
     def setup_explorer_ui(self):
         # Create Menu Bar
-        menubar = tk.Menu(self.root)
-        self.root.config(menu=menubar)
+        self.menubar = tk.Menu(self.root)
+        self.root.config(menu=self.menubar)
 
         # Add Help Menu
-        help_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="Help", menu=help_menu)
-        help_menu.add_command(label="How to Use", command=self.show_help)
-        help_menu.add_command(label="About", command=self.show_about)
+        self.help_menu = tk.Menu(self.menubar, tearoff=0)
+        self.menubar.add_cascade(label="Help", menu=self.help_menu)
+        self.help_menu.add_command(label="How to Use", command=self.show_help)
+        self.help_menu.add_command(label="About", command=self.show_about)
 
         # Top Controls
         top = tk.Frame(self.tab_browse)
         top.pack(side="top", fill="x", padx=10, pady=10)
         
-        tk.Button(top, text="📂 Open ZFS", command=self.open_zfs, width=15).pack(side="left")
-        tk.Button(top, text="📥 Extract Selected", command=self.extract_selected, bg="#c8e6c9", width=15).pack(side="left", padx=5)
+        tk.Button(top, text="📂 Open ZFS", command=self.open_zfs, width=16).pack(side="left")
+        tk.Button(top, text="📥 Extract Selected", command=self.extract_selected, width=16).pack(side="left", padx=5)
         
         self.enc_var = tk.BooleanVar(value=True)
         tk.Checkbutton(top, text="Apply Header Decryption Key", variable=self.enc_var).pack(side="left", padx=10)
@@ -122,7 +257,7 @@ class ZFSManager:
         self.tree.pack(side="left", expand=True, fill="both")
         scroll.pack(side="right", fill="y")
 
-        self.ex_status = tk.Label(self.tab_browse, text="Ready", bd=1, relief="sunken", anchor="w")
+        self.ex_status = tk.Label(self.tab_browse, text="READY", bd=1, relief="sunken", anchor="w")
         self.ex_status.pack(side="bottom", fill="x")
 
     def show_help(self):
@@ -151,21 +286,21 @@ class ZFSManager:
     # --- UI: PACKER TAB ---
     def setup_packer_ui(self):
         main = tk.Frame(self.tab_pack)
-        main.pack(expand=True)
+        main.pack(expand=True, fill="both")
         
-        tk.Label(main, text="Pack Folder into ZFS", font=("Arial", 12, "bold")).pack(pady=10)
+        tk.Label(main, text="PACK FOLDER INTO ZFS", font=(self.current_font, 14, "bold"), fg=self.colors["highlight"]).pack(pady=14)
         
-        tk.Label(main, text="Encryption Key (Numeric):").pack()
+        tk.Label(main, text="ENCRYPTION KEY (NUMERIC / HEX):").pack()
         self.pk_key_entry = tk.Entry(main, justify="center")
         self.pk_key_entry.insert(0, "0")
         self.pk_key_entry.pack(pady=5)
         
         tk.Button(main, text="🚀 Select Folder & Build ZFS", command=self.pack_folder, 
-                  height=2, width=30, bg="#bbdefb").pack(pady=20)
+                  height=2, width=30).pack(pady=20)
         
-        self.pk_progress = ttk.Progressbar(main, length=300, mode='determinate')
+        self.pk_progress = ttk.Progressbar(main, length=320, mode='determinate', style="BZ.Horizontal.TProgressbar")
         self.pk_progress.pack(pady=10)
-        self.pk_status = tk.Label(main, text="Waiting for input...")
+        self.pk_status = tk.Label(main, text="WAITING FOR INPUT...")
         self.pk_status.pack()
 
     # --- CORE LOGIC: CRYPTO ---
