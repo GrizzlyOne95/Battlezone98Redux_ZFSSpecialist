@@ -6,7 +6,7 @@ A high-performance archive explorer and packer for Battlezone (1998) `.zfs` file
 * **Full Explorer:** Browse archive contents without extracting first.
 * **Instant Search:** Filter thousands of files by name or extension in real-time.
 * **Smart Packing:** Build new ZFS archives with LZO1X-1 compression.
-* **XOR Crypto:** Full support for BZ1's rolling-key encryption.
+* **XOR Crypto:** MakeZFS-compatible encrypted archive extraction.
 * **Portable:** Standalone EXE (no Python installation required).
 
 * <img width="1002" height="732" alt="image" src="https://github.com/user-attachments/assets/709805d7-14cf-40d2-9237-9acd845f2b0f" />
@@ -15,7 +15,9 @@ A high-performance archive explorer and packer for Battlezone (1998) `.zfs` file
 ## Installation & Usage
 1. Download the latest `zfs_specialist.exe` from the Releases tab.
 3. **To Extract:** Open a ZFS, select files (multi-select supported), and click Extract.
-4. **To Pack:** Go to the Packer tab, select a folder of files, set your XOR key, and build.
+4. **Manual Key Input (optional):** You can enter a decimal key, hex key (for example `0xCBA07D86`), or a password string. Passwords are converted using CRC32 to match MakeZFS behavior.
+5. **Encrypted Archives:** For encrypted/compressed files, data is decompressed first and then XOR-decoded with the 32-bit key stream.
+6. **To Pack:** Go to the Packer tab, select a folder of files, set your XOR key, and build.
 
 ## Repository Structure
 * `/src`: Python source code for the GUI and logic.

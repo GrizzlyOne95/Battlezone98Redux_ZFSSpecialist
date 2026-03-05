@@ -173,7 +173,7 @@ class ZFSManager:
         val = self.manual_key_var.get().strip()
         if not val: return None
         try:
-            return int(val)
+            return int(val, 0)
         except ValueError:
             # Assume string password
             return val
@@ -184,13 +184,10 @@ class ZFSManager:
         if isinstance(key_val, int):
             return struct.pack('<I', key_val & 0xFFFFFFFF)
         
-        # It's a string password
+        # MakeZFS uses CRC32(password) as a 32-bit XOR key.
         pwd_bytes = key_val.encode('utf-8')
         header_key = zlib.crc32(pwd_bytes) & 0xFFFFFFFF
-        h_bytes = struct.pack('<I', header_key)
-        
-        # The repeating key structure: [len(password)] + header_key_bytes + password_bytes
-        return bytes([len(pwd_bytes)]) + h_bytes + pwd_bytes
+        return struct.pack('<I', header_key)
 
     def xor_data(self, data, key_val):
         key_stream = self.build_key_stream(key_val)
@@ -286,21 +283,9 @@ class ZFSManager:
                     if not name: 
                         continue
 
-                    # Handle "Retarded" Encryption: Fix Sizes
                     u_size = flags >> 8
                     p_size = c_size
                     is_encrypted = self.header_info['key'] != 0
-                    
-                    if is_encrypted:
-                        curr_pos = f.tell()
-                        f.seek(offset)
-                        prefix = f.read(1)
-                        if prefix:
-                            # prefix[0] is used both as XOR byte and to adjust sizes
-                            p_byte = prefix[0]
-                            p_size ^= p_byte
-                            u_size ^= p_byte
-                        f.seek(curr_pos)
 
                     self.all_records.append({
                         'name': name, 'ext': os.path.splitext(name)[1].lower(),
@@ -345,13 +330,6 @@ class ZFSManager:
 
                 is_encrypted = rec.get('encrypted', False)
                 
-                if is_encrypted:
-                    # Skip the "Retarded" 2-byte prefix
-                    f.read(2)
-                    data = f.read(rec['packed'])
-                else:
-                    data = f.read(rec['packed'])
-                
                 print(f"[Extract] File: {name} | Offset: {rec['offset']} | Packed: {rec['packed']} | Unpacked: {rec['size']} | Key: {use_key} | Enc: {is_encrypted}")
 
                 if man_key is not None: key = man_key
@@ -364,17 +342,10 @@ class ZFSManager:
                 flags = rec['flags']
                 
                 f.seek(offset)
-                
-                # Decrypt: BZ98 Redux repeating XOR key mechanism
-                # Initial 2 bytes are NOT part of data but ARE XORed
-                if key != 0 and key != "":
-                    encrypted_data = f.read(p_size + 2)
-                    decrypted_block = self.xor_data(encrypted_data, key)
-                    data = decrypted_block[2:] # Skip the 2-byte prefix
-                else:
-                    data = f.read(p_size)
+                data = f.read(p_size)
                 
                 # Decompress
+                decomp_ok = False
                 if (flags & 0x6) and lzo_dll:
                     # ZFS uses LZO1X or LZO1Y.
                     # LZO_ALGO_1X = 2, LZO_ALGO_1Y = 4
@@ -391,6 +362,7 @@ class ZFSManager:
                         ret = lzo_dll.decompress_buffer(algo, data, c_size_t(len(data)), dst, byref(d_len))
                         if ret == 0: # LZO_E_OK
                             content = dst.raw[:d_len.value]
+                            decomp_ok = True
                         else:
                             print(f"Decompression error {ret} for {name}")
                             content = data # Fallback to packed if decompression fails
@@ -399,6 +371,11 @@ class ZFSManager:
                         content = data # Fallback to packed if decompression crashes
                 else:
                     content = data
+
+                # For encrypted MakeZFS archives, XOR is applied to unpacked payload bytes.
+                if is_encrypted and key != 0 and key != "":
+                    if decomp_ok or not (flags & 0x6):
+                        content = self.xor_data(content, key)
 
                 out_path = os.path.join(out_dir, name)
                 with open(out_path, 'wb') as out_f:
