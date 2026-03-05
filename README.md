@@ -9,7 +9,8 @@ A high-performance archive explorer and packer for Battlezone (1998) `.zfs` file
 * **XOR Crypto:** MakeZFS-compatible encrypted archive extraction.
 * **Portable:** Standalone EXE (no Python installation required).
 
-* <img width="1002" height="732" alt="image" src="https://github.com/user-attachments/assets/709805d7-14cf-40d2-9237-9acd845f2b0f" />
+<img width="1002" height="732" alt="image" src="https://github.com/user-attachments/assets/e5d33deb-7d5d-470f-a7ed-1255d609caac" />
+
 
 
 ## Installation & Usage
