@@ -1,6 +1,6 @@
 # Battlezone ZFS Specialist
 
-A high-performance archive explorer and packer for Battlezone (1998) `.zfs` files. This tool allows modders to browse, search, extract, and create encrypted/compressed archives compatible with the BZ1 engine.
+A high-performance archive explorer and packer for Battlezone (1998) `.zfs` files. This tool allows modders to browse, search, extract, force-extract encrypted ZFS archives, and create encrypted/compressed archives compatible with the BZ1 engine.
 
 ## Features
 * **Full Explorer:** Browse archive contents without extracting first.
