@@ -7,6 +7,8 @@
   - cyan/blue accent and highlight colors
   - styled notebook tabs, buttons, entries, treeview, headings, and progress bar
 - Updated explorer/packer labels and status bar presentation to match the BZ HUD-like look.
+- Fixed top explorer controls clipping by moving manual key controls to a second row.
+- Added runtime loading of `BZONE.ttf` on Windows with automatic fallback if unavailable.
 
 ## 2026-03-05
 

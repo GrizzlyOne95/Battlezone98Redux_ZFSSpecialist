@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+import tkinter.font as tkfont
 import struct
 import os
 import sys
@@ -50,8 +51,9 @@ class ZFSManager:
             "panel": "#1a1a1a",
             "status_bg": "#050505",
         }
-        self.current_font = "Consolas"
-        self.root.option_add("*Font", (self.current_font, 10))
+        self.current_font = self.load_custom_font()
+        self.base_font_size = 9 if "bzone" in self.current_font.lower() else 10
+        self.root.option_add("*Font", (self.current_font, self.base_font_size))
         self.root.configure(bg=self.colors["bg"])
 
         self.style = ttk.Style()
@@ -82,10 +84,37 @@ class ZFSManager:
         self.setup_packer_ui()
         self.apply_manual_widget_theme()
 
+    def load_custom_font(self):
+        fallback = "Consolas"
+        if os.name != "nt":
+            return fallback
+
+        font_path = resource_path("BZONE.ttf")
+        if not os.path.exists(font_path):
+            return fallback
+
+        try:
+            FR_PRIVATE = 0x10
+            windll.gdi32.AddFontResourceExW(font_path, FR_PRIVATE, 0)
+        except Exception:
+            return fallback
+
+        try:
+            families = list(tkfont.families(self.root))
+            preferred = [f for f in families if "bzone" in f.lower()]
+            if preferred:
+                return preferred[0]
+            if "BZONE" in families:
+                return "BZONE"
+        except Exception:
+            pass
+
+        return fallback
+
     def update_styles(self, style):
         c = self.colors
-        main_font = (self.current_font, 10)
-        bold_font = (self.current_font, 11, "bold")
+        main_font = (self.current_font, self.base_font_size)
+        bold_font = (self.current_font, self.base_font_size + 1, "bold")
 
         style.configure(".", background=c["bg"], foreground=c["fg"], font=main_font)
         style.configure("TFrame", background=c["bg"])
@@ -146,7 +175,10 @@ class ZFSManager:
         c = self.colors
 
         def apply_widget_style(widget):
-            if isinstance(widget, tk.Frame):
+            # ttk widgets are styled through ttk.Style; avoid tk-specific options on them.
+            if isinstance(widget, ttk.Widget):
+                pass
+            elif isinstance(widget, tk.Frame):
                 widget.configure(bg=c["bg"])
             elif isinstance(widget, tk.Label):
                 widget.configure(bg=c["bg"], fg=c["fg"])
@@ -215,19 +247,24 @@ class ZFSManager:
         # Top Controls
         top = tk.Frame(self.tab_browse)
         top.pack(side="top", fill="x", padx=10, pady=10)
-        
-        tk.Button(top, text="📂 Open ZFS", command=self.open_zfs, width=16).pack(side="left")
-        tk.Button(top, text="📥 Extract Selected", command=self.extract_selected, width=16).pack(side="left", padx=5)
-        
+
+        actions_row = tk.Frame(top)
+        actions_row.pack(side="top", fill="x")
+        key_row = tk.Frame(top)
+        key_row.pack(side="top", fill="x", pady=(6, 0))
+
+        ttk.Button(actions_row, text="📂 Open ZFS", command=self.open_zfs).pack(side="left")
+        ttk.Button(actions_row, text="📥 Extract Selected", command=self.extract_selected).pack(side="left", padx=5)
+
         self.enc_var = tk.BooleanVar(value=True)
-        tk.Checkbutton(top, text="Apply Header Decryption Key", variable=self.enc_var).pack(side="left", padx=10)
-        
+        ttk.Checkbutton(actions_row, text="Apply Header Decryption Key", variable=self.enc_var).pack(side="left", padx=10)
+
         self.dir_enc_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(top, text="Decrypt Directory", variable=self.dir_enc_var).pack(side="left", padx=5)
-        
-        tk.Label(top, text="Manual Key Override:").pack(side="left", padx=(10, 2))
+        ttk.Checkbutton(actions_row, text="Decrypt Directory", variable=self.dir_enc_var).pack(side="left", padx=5)
+
+        ttk.Label(key_row, text="Manual Key Override:").pack(side="left", padx=(0, 6))
         self.manual_key_var = tk.StringVar(value="")
-        tk.Entry(top, textvariable=self.manual_key_var, width=12).pack(side="left")
+        ttk.Entry(key_row, textvariable=self.manual_key_var, width=20).pack(side="left")
 
         # Search Bar
         search_frame = tk.Frame(self.tab_browse)
@@ -288,7 +325,7 @@ class ZFSManager:
         main = tk.Frame(self.tab_pack)
         main.pack(expand=True, fill="both")
         
-        tk.Label(main, text="PACK FOLDER INTO ZFS", font=(self.current_font, 14, "bold"), fg=self.colors["highlight"]).pack(pady=14)
+        tk.Label(main, text="PACK FOLDER INTO ZFS", font=(self.current_font, self.base_font_size + 4, "bold"), fg=self.colors["highlight"]).pack(pady=14)
         
         tk.Label(main, text="ENCRYPTION KEY (NUMERIC / HEX):").pack()
         self.pk_key_entry = tk.Entry(main, justify="center")
