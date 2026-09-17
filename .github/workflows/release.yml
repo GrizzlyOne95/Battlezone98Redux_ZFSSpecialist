@@ -28,7 +28,6 @@ jobs:
     - name: Verify imports and syntax
       run: |
         python -m py_compile src/unzfs.py branding/pyinstaller_icon_hook.py
-        python -c "import ast; ast.parse(open('src/unzfs.py').read()); print('Import successful')"
 
     - name: Build Windows executable
       run: |
