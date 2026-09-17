@@ -9,6 +9,7 @@ a = Analysis(
     binaries=[('dll_source/lzo_bridge.dll', '.')],
     datas=[
         ('BZONE.ttf', '.'),
+        ('branding/app_icon.ico', 'branding'),
         ('branding/app_icon.png', 'branding'),
     ],
     hiddenimports=[],
@@ -40,5 +41,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='branding/app_icon.png',
+    icon='branding/app_icon.ico',
 )
