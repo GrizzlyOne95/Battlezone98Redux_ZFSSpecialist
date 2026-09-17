@@ -11,14 +11,45 @@ A high-performance archive explorer and packer for Battlezone (1998) `.zfs` file
 
 <img width="1002" height="732" alt="image" src="https://github.com/user-attachments/assets/e5d33deb-7d5d-470f-a7ed-1255d609caac" />
 
-
-
 ## Installation & Usage
-1. Download the latest `zfs_specialist.exe` from the Releases tab.
+1. Download the latest Windows release archive from the Releases tab.
+2. Extract and launch `BZZFSSpecialist.exe`.
 3. **To Extract:** Open a ZFS, select files (multi-select supported), and click Extract.
 4. **Manual Key Input (optional):** You can enter a decimal key, hex key (for example `0xCBA07D86`), or a password string. Passwords are converted using CRC32 to match MakeZFS behavior.
 5. **Encrypted Archives:** For encrypted/compressed files, data is decompressed first and then XOR-decoded with the 32-bit key stream.
 6. **To Pack:** Go to the Packer tab, select a folder of files, set your XOR key, and build.
+
+The executable name is intentionally stable and versionless. Release archives carry the version, for example `Battlezone98Redux_ZFSSpecialist-v3.1.3-windows.zip`.
+
+### Windows application metadata
+
+Release builds follow the shared Battlezone Modding Tools convention:
+
+```text
+FileDescription: Battlezone ZFS Specialist
+ProductName: Battlezone Modding Tools
+CompanyName: GrizzlyOne95
+OriginalFilename: BZZFSSpecialist.exe
+```
+
+`FileVersion` and `ProductVersion` are generated from the Git release tag.
+
+### Building locally
+
+A normal local PyInstaller build remains valid:
+
+```powershell
+python -m PyInstaller --noconfirm --clean ZFSSpecialist.spec
+```
+
+To include the same Windows version metadata used by release builds, generate the version-info file first:
+
+```powershell
+python scripts/generate_version_info.py --version "3.1.3" --output branding/version_info.txt
+python -m PyInstaller --noconfirm --clean ZFSSpecialist.spec
+```
+
+The resulting executable is `dist/BZZFSSpecialist.exe`.
 
 ## Repository Structure
 * `/src`: Python source code for the GUI and logic.
@@ -33,7 +64,7 @@ A high-performance archive explorer and packer for Battlezone (1998) `.zfs` file
 * **The BZ1 Community**: For keeping the 1998 classic alive.
 
 ## License
-This project is licensed under the **GNU General Public License v2.0 (GPL-2.0)**. 
+This project is licensed under the **GNU General Public License v2.0 (GPL-2.0)**.
 As this tool utilizes the LZO library (GPL), the source code for this tool and its bridge are provided freely to remain compliant with LZO's licensing terms.
 
 ## Disclaimer

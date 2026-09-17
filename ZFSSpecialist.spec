@@ -3,6 +3,10 @@
 # Windows-oriented PyInstaller build for the ZFS Specialist.
 # Build with: pyinstaller --noconfirm --clean ZFSSpecialist.spec
 
+import os
+
+version_file = 'branding/version_info.txt' if os.path.exists('branding/version_info.txt') else None
+
 a = Analysis(
     ['src/unzfs.py'],
     pathex=['.'],
@@ -28,7 +32,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='zfs_specialist',
+    name='BZZFSSpecialist',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -42,4 +46,5 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon='branding/app_icon.ico',
+    version=version_file,
 )

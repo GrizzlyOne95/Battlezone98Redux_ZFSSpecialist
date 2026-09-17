@@ -27,18 +27,26 @@ jobs:
 
     - name: Verify imports and syntax
       run: |
-        python -m py_compile src/unzfs.py branding/pyinstaller_icon_hook.py
+        python -m py_compile src/unzfs.py branding/pyinstaller_icon_hook.py scripts/generate_version_info.py
+
+    - name: Generate Windows version metadata
+      run: |
+        python scripts/generate_version_info.py --version "${{ github.ref_name }}" --output branding/version_info.txt
 
     - name: Build Windows executable
       run: |
         python -m PyInstaller --noconfirm --clean ZFSSpecialist.spec
-        Get-Item dist/zfs_specialist.exe
+        Get-Item dist/BZZFSSpecialist.exe
+
+    - name: Package Windows application
+      run: |
+        Compress-Archive -Path dist/BZZFSSpecialist.exe -DestinationPath "Battlezone98Redux_ZFSSpecialist-${{ github.ref_name }}-windows.zip"
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: zfs_specialist-windows
-        path: dist/zfs_specialist.exe
+        name: Battlezone98Redux_ZFSSpecialist-windows
+        path: Battlezone98Redux_ZFSSpecialist-${{ github.ref_name }}-windows.zip
 
   release:
     needs: build
@@ -52,19 +60,20 @@ jobs:
 
     - name: Download all artifacts
       uses: actions/download-artifact@v4
-      continue-on-error: true
+      with:
+        path: release-artifacts
 
     - name: List artifacts
       run: |
         echo "Artifacts downloaded:"
-        find . -type f -name "zfs_specialist*" 2>/dev/null || echo "No artifacts found"
+        find release-artifacts -type f -maxdepth 3 -print
 
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         files: |
-          zfs_specialist-windows/zfs_specialist.exe
-        fail_on_unmatched_files: false
+          release-artifacts/Battlezone98Redux_ZFSSpecialist-windows/Battlezone98Redux_ZFSSpecialist-v*-windows.zip
+        fail_on_unmatched_files: true
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
