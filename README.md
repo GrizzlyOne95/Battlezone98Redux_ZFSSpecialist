@@ -45,7 +45,7 @@ python -m PyInstaller --noconfirm --clean ZFSSpecialist.spec
 To include the same Windows version metadata used by release builds, generate the version-info file first:
 
 ```powershell
-python scripts/generate_version_info.py --version "3.1.3" --output branding/version_info.txt
+python scripts/generate_version_info.py --version "v$((Get-Content VERSION).Trim())" --output branding/version_info.txt
 python -m PyInstaller --noconfirm --clean ZFSSpecialist.spec
 ```
 
