@@ -36,9 +36,9 @@ jobs:
       shell: powershell
       run: |
         if ("${{ github.ref_type }}" -eq "tag") {
-          $version = "${{ steps.version.outputs.version }}"
+          $version = "${{ github.ref_name }}"
         } else {
-          $version = (Get-Content VERSION).Trim()
+          $version = "v$((Get-Content VERSION).Trim())"
         }
         "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
