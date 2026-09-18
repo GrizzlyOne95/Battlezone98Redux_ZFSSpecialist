@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-09-17
+
+- Added legacy MakeZFS/LZO header detection for archives beginning with `LZO205BZEF\\xFF\\xFF`.
+- Preserved automatic extraction of encrypted raw, LZO1X, and LZO1Y payloads using the archive header key.
+- Fixed directory-encrypted record parsing so each directory record is XOR-decoded exactly once.
+- Added header sanity checks so unsupported/misaligned archives fail cleanly instead of producing enormous bogus record sizes.
+
+
 ## 2026-03-05
 
 - Added BZ-themed UI styling aligned with Battlezone98Redux_GOGModDownloader:
