@@ -502,9 +502,6 @@ class ZFSManager:
                         chunk = self.xor_data(chunk, dir_key)
 
                     name_raw, offset, rnum, c_size, time, flags = struct.unpack(fmt, chunk)
-                    if block_encrypted:
-                        chunk = self.xor_data(chunk, dir_key)
-                        name_raw, offset, rnum, c_size, time, flags = struct.unpack(fmt, chunk)
 
                     name = name_raw.split(b'\x00')[0].decode('ascii', errors='ignore').strip()
                     
