@@ -6,7 +6,8 @@ A high-performance archive explorer and packer for Battlezone (1998) `.zfs` file
 * **Full Explorer:** Browse archive contents without extracting first.
 * **Instant Search:** Filter thousands of files by name or extension in real-time.
 * **Smart Packing:** Build new ZFS archives with LZO1X-1 compression.
-* **XOR Crypto:** MakeZFS-compatible encrypted archive extraction.\n* **Legacy Header Support:** Opens both `ZFSF` archives and legacy `LZO205BZEF\\xFF\\xFF` MakeZFS/LZO archives.
+* **XOR Crypto:** MakeZFS-compatible encrypted archive extraction.
+* **Legacy Header Support:** Opens both `ZFSF` archives and legacy `LZO205BZEF\\xFF\\xFF` MakeZFS/LZO archives.
 * **Portable:** Standalone EXE (no Python installation required).
 
 <img width="1002" height="732" alt="image" src="https://github.com/user-attachments/assets/e5d33deb-7d5d-470f-a7ed-1255d609caac" />
