@@ -37,6 +37,47 @@ except Exception as e:
     lzo_dll = None
     print(f"Critical: DLL not found. {e}")
 
+
+LEGACY_LZO_ZFS_MAGIC = b"LZO205BZEF\xff\xff"
+ZFSF_MAGIC = b"ZFSF"
+
+def read_zfs_header(stream):
+    """Read either the Specialist ZFSF header or the legacy MakeZFS/LZO header."""
+    stream.seek(0)
+    prefix = stream.read(12)
+    if len(prefix) < 12:
+        raise ValueError("File is too small to contain a valid ZFS header.")
+
+    if prefix == LEGACY_LZO_ZFS_MAGIC:
+        raw_fields = stream.read(24)
+        if len(raw_fields) != 24:
+            raise ValueError("Legacy LZO ZFS header is truncated.")
+        h = (prefix,) + struct.unpack("<IIIIII", raw_fields)
+        header_format = "Legacy LZO205"
+    else:
+        stream.seek(0)
+        raw_header = stream.read(28)
+        if len(raw_header) != 28:
+            raise ValueError("ZFSF header is truncated.")
+        h = struct.unpack("<4sIIIIII", raw_header)
+        if h[0] != ZFSF_MAGIC:
+            shown = prefix.hex(" ")
+            raise ValueError(f"Unsupported ZFS header signature: {shown}")
+        header_format = "ZFSF"
+
+    # Guard against a misidentified header creating absurd record sizes/loops.
+    name_len = h[2]
+    entries_per_block = h[3]
+    total_files = h[4]
+    if not (1 <= name_len <= 4096):
+        raise ValueError(f"Invalid ZFS filename field length: {name_len}")
+    if not (1 <= entries_per_block <= 100000):
+        raise ValueError(f"Invalid ZFS entries-per-block value: {entries_per_block}")
+    if total_files > 10000000:
+        raise ValueError(f"Invalid ZFS file count: {total_files}")
+
+    return h, header_format
+
 class ZFSManager:
     def __init__(self, root):
         self.root = root
@@ -379,8 +420,23 @@ class ZFSManager:
         self.all_records = []
         
         with open(path, 'rb') as f:
-            h = struct.unpack('<4sIIIIII', f.read(28))
-            self.header_info = {'name_len': h[2], 'entries': h[3], 'total': h[4], 'key': h[5]}
+            try:
+                h, header_format = read_zfs_header(f)
+            except ValueError as e:
+                self.current_zfs_path = ""
+                self.all_records = []
+                self.header_info = {}
+                self.refresh_tree()
+                messagebox.showerror("Unsupported ZFS", str(e))
+                return
+
+            self.header_info = {
+                'name_len': h[2],
+                'entries': h[3],
+                'total': h[4],
+                'key': h[5],
+                'format': header_format,
+            }
             print(f"[Open] Header Info: {self.header_info}")
             
             # Determine Key for Directory (if needed)
@@ -446,9 +502,6 @@ class ZFSManager:
                         chunk = self.xor_data(chunk, dir_key)
 
                     name_raw, offset, rnum, c_size, time, flags = struct.unpack(fmt, chunk)
-                    if block_encrypted:
-                        chunk = self.xor_data(chunk, dir_key)
-                        name_raw, offset, rnum, c_size, time, flags = struct.unpack(fmt, chunk)
 
                     name = name_raw.split(b'\x00')[0].decode('ascii', errors='ignore').strip()
                     
