@@ -2,6 +2,8 @@ name: Build and Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
 
@@ -29,9 +31,20 @@ jobs:
       run: |
         python -m py_compile src/unzfs.py branding/pyinstaller_icon_hook.py scripts/generate_version_info.py
 
+    - name: Resolve package version
+      id: version
+      shell: powershell
+      run: |
+        if ("${{ github.ref_type }}" -eq "tag") {
+          $version = "${{ steps.version.outputs.version }}"
+        } else {
+          $version = (Get-Content VERSION).Trim()
+        }
+        "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
     - name: Generate Windows version metadata
       run: |
-        python scripts/generate_version_info.py --version "${{ github.ref_name }}" --output branding/version_info.txt
+        python scripts/generate_version_info.py --version "${{ steps.version.outputs.version }}" --output branding/version_info.txt
 
     - name: Build Windows executable
       run: |
@@ -40,23 +53,34 @@ jobs:
 
     - name: Package Windows application
       run: |
-        Compress-Archive -Path dist/BZZFSSpecialist.exe -DestinationPath "Battlezone98Redux_ZFSSpecialist-${{ github.ref_name }}-windows.zip"
+        Compress-Archive -Path dist/BZZFSSpecialist.exe -DestinationPath "Battlezone98Redux_ZFSSpecialist-${{ steps.version.outputs.version }}-windows.zip"
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: Battlezone98Redux_ZFSSpecialist-windows
-        path: Battlezone98Redux_ZFSSpecialist-${{ github.ref_name }}-windows.zip
+        path: Battlezone98Redux_ZFSSpecialist-${{ steps.version.outputs.version }}-windows.zip
 
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: success()
+    if: "${{ success() && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'chore(release): v'))) }}"
     permissions:
       contents: write
 
     steps:
     - uses: actions/checkout@v4
+
+    - name: Resolve release tag
+      id: release_version
+      shell: bash
+      run: |
+        if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+          tag="$GITHUB_REF_NAME"
+        else
+          tag="v$(tr -d '[:space:]' < VERSION)"
+        fi
+        echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
     - name: Download all artifacts
       uses: actions/download-artifact@v4
@@ -71,6 +95,9 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
+        tag_name: ${{ steps.release_version.outputs.tag }}
+        name: ${{ steps.release_version.outputs.tag }}
+        target_commitish: ${{ github.sha }}
         files: |
           release-artifacts/Battlezone98Redux_ZFSSpecialist-windows/Battlezone98Redux_ZFSSpecialist-v*-windows.zip
         fail_on_unmatched_files: true
